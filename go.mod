@@ -1,4 +1,4 @@
-module discord-voice-assistant
+module github.com/andy0458/discord-voice-assistant
 
 go 1.20
 

@@ -1,0 +1,7 @@
+steps:
+- name: golang
+  args: ['go', 'version']
+- name: golang
+  args: ['go', 'test']
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: ['functions', 'deploy', 'TestCloudFunction', '--trigger-http', '--runtime', 'go116', '--entry-point', 'HelloHTTP']

@@ -3,5 +3,7 @@ steps:
   args: ['go', 'version']
 - name: golang
   args: ['go', 'test']
-- name: 'gcr.io/cloud-builders/gcloud'
-  args: ['functions', 'deploy', 'TestCloudFunction', '--trigger-http', '--runtime', 'go116', '--entry-point', 'HelloHTTP']
+- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  entrypoint: 'bash'
+  args: ['-c', 'gcloud config set app/cloud_build_timeout 1600 && gcloud app deploy']
+timeout: '1600s'

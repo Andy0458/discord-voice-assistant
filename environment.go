@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	error "discord_voice_assistant/error"
 )
 
 func ensureValue(key string) string {
@@ -10,7 +12,7 @@ func ensureValue(key string) string {
 		return value
 	}
 
-	FormatError(fmt.Errorf("failed to obtain environmental value using \"%s\" key", key))
+	error.FormatError(fmt.Errorf("failed to obtain environmental value using \"%s\" key", key))
 	os.Exit(0)
 	return "" // never reaches
 }

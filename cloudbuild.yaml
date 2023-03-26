@@ -1,9 +1,8 @@
 steps:
-- name: golang
-  args: ['go', 'version']
-- name: golang
-  args: ['go', 'test']
-- name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  entrypoint: 'bash'
-  args: ['-c', 'gcloud config set app/cloud_build_timeout 1600 && gcloud app deploy']
+- name: gcr.io/cloud-builders/docker
+  args: ['build', '-t', 'gcr.io/$PROJECT_ID/dicsord-voice-assistant:${SHORT_SHA}', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ["push", "gcr.io/$PROJECT_ID/dicsord-voice-assistant"]
+- name: 'gcr.io/cloud-builders/gcloud'
+  args: ['run', 'deploy', 'dicsord-voice-assistant', '--image', 'gcr.io/$PROJECT_ID/dicsord-voice-assistant:${SHORT_SHA}', '--region', 'us-central1', '--platform', 'managed']
 timeout: '1600s'

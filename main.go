@@ -1,59 +1,83 @@
 package main
 
 import (
-	"discord_voice_assistant/commands"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
-	"time"
+	"os/signal"
 
-	tempest "github.com/Amatsagu/Tempest"
+	error "discord_voice_assistant/error"
+	commands "discord_voice_assistant/commands"
+	discordgo "github.com/bwmarrin/discordgo"
 )
 
 func main() {
+	// Get bot token
 	secrets, err := getSecrets()
 	if err != nil {
-		FormatError(fmt.Errorf("failed to obtain secrets: %v", err))
-		os.Exit(0)
-	}
-
-	botTokenSecret, ok := secrets["DISCORD_BOT_TOKEN"]
-	if !ok {
-		FormatError(fmt.Errorf("Discord bot token secret missing"))
-		os.Exit(0)
-	}
-	botToken := botTokenSecret.Value()
-
-	client := tempest.CreateClient(tempest.ClientOptions{
-		ApplicationID: tempest.StringToSnowflake(ensureValue("DISCORD_APP_ID")),
-		PublicKey:     ensureValue("DISCORD_PUBLIC_KEY"),
-		Token:         "Bot " + botToken,
-		PreCommandExecutionHandler: func(itx tempest.CommandInteraction) *tempest.ResponseData {
-			log.Printf("%v", itx)
-			return nil
-		},
-		Cooldowns: &tempest.ClientCooldownOptions{
-			Duration:  time.Second * 3,
-			Ephemeral: true,
-			CooldownResponse: func(user tempest.User, timeLeft time.Duration) tempest.ResponseData {
-				return tempest.ResponseData{
-					Content: fmt.Sprintf("You're still on cooldown! Try again in **%.2fs**.", timeLeft.Seconds()),
-				}
-			},
-		},
-	})
-
-	addr := fmt.Sprintf("0.0.0.0:%s", ensureValue("PORT"))
-
-	client.RegisterCommand(commands.Add)
-	client.SyncCommands([]tempest.Snowflake{}, nil, false)
-
-	log.Printf("Starting application at %s", addr)
-	log.Printf("Latency: %dms", client.Ping().Milliseconds())
-
-	if err := client.ListenAndServe("/", addr); err != nil {
-		// Will happen in situation where normal std/http would panic so most likely never.
-		FormatError(err)
+		error.FormatError(fmt.Errorf("failed to obtain secrets: %v", err))
 		os.Exit(1)
 	}
+
+	botToken, ok := secrets["DISCORD_BOT_TOKEN"]
+	if !ok {
+		error.FormatError(fmt.Errorf("Discord bot token secret missing"))
+		os.Exit(1)
+	}
+
+	// Start discord session
+	s, err := discordgo.New("Bot " + botToken)
+	if err != nil {
+		error.FormatError(err)
+		os.Exit(1)
+	}
+
+	// Set up commands
+	cmds := []*discordgo.ApplicationCommand{
+		&commands.Add,
+	}
+	commandHandlers := map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
+		commands.Add.Name: commands.AddHandler,
+	}
+
+
+	// Set up intents -- we only want to receive events for Guild and direct interactions
+	s.Identify.Intents = discordgo.IntentGuildVoiceStates | discordgo.IntentGuildMessages | discordgo.IntentDirectMessages
+
+	// Add handlers
+	s.AddHandlerOnce(func(s *discordgo.Session, r *discordgo.Ready) { log.Println("Bot is up!") })
+	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
+			h(s, i)
+		}
+	})
+
+	// Open session
+	err = s.Open()
+	if err != nil {
+		error.FormatError(err)
+		os.Exit(0)
+	}
+	defer s.Close()
+
+	// Register commands - override
+	// set DISCORD_EXPERIMENTAL_SERVER_ID to cache commands only with a test discord server, otherwise ensure it is empty
+	experimentalGuildId, _ := os.LookupEnv("DISCORD_EXPERIMENTAL_SERVER_ID")
+	_, err = s.ApplicationCommandBulkOverwrite(s.State.User.ID, experimentalGuildId, cmds)
+	if err != nil {
+		error.FormatError(fmt.Errorf("Cannot register commands: %v", err))
+	}
+
+	// Dummy http server to keep cloudrun happy on deployment
+	svr := http.Server{
+		Addr: ":8080",
+	}
+	svr.ListenAndServe()
+
+	// Wait for stop notification and gracefully close
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt)
+	<-stop
+	log.Println("Gracefully shutting down")
 }
